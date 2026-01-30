@@ -1,0 +1,7 @@
+sample,fastq_1,fastq_2,strandedness
+HCC1395_normal_rep1,./data/hcc1395_normal_rep1_r1.fastq.gz,./data/hcc1395_normal_rep1_r2.fastq.gz,auto
+HCC1395_normal_rep2,./data/hcc1395_normal_rep2_r1.fastq.gz,./data/hcc1395_normal_rep2_r2.fastq.gz,auto
+HCC1395_normal_rep3,./data/hcc1395_normal_rep3_r1.fastq.gz,./data/hcc1395_normal_rep3_r2.fastq.gz,auto
+HCC1395_tumor_rep1,./data/hcc1395_tumor_rep1_r1.fastq.gz,./data/hcc1395_tumor_rep1_r2.fastq.gz,auto
+HCC1395_tumor_rep2,./data/hcc1395_tumor_rep2_r1.fastq.gz,./data/hcc1395_tumor_rep2_r2.fastq.gz,auto
+HCC1395_tumor_rep3,./data/hcc1395_tumor_rep3_r1.fastq.gz,./data/hcc1395_tumor_rep3_r2.fastq.gz,auto

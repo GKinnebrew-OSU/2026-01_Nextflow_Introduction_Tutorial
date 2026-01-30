@@ -1,0 +1,1201 @@
+---
+title: "Introduction to Nextflow and nf-core Pipelines"
+subtitle: "Running Bioinformatics Workflows on OSC"
+author: "OSC Training"
+format:
+  revealjs:
+    theme: [default, custom.scss]
+    slide-number: true
+    preview-links: auto
+    footer: "Nextflow & nf-core on OSC | January 2026"
+    scrollable: true
+    self-contained: true
+---
+
+## Overview {.smaller}
+
+**Duration**: 30-45 minutes
+
+**Format**: Introduction Presentation, followed by tutorial with hands-on exercises
+
+**Example Pipeline**: nf-core/rnaseq
+
+## Agenda
+
+1. Introduction to Nextflow & nf-core (10 min)
+2. OSC-Specific Setup (5 min)
+3. Understanding nf-core/rnaseq (5 min)
+4. **Hands-On Exercise** (15 min)
+5. Customization (5 min)
+6. Troubleshooting (5 min)
+7. Reproducibility Best Practices (3 min)
+8. Advanced Topics (2 min)
+
+# Section 1: Introduction
+
+## What is Nextflow?
+
+Workflow management system for scientific pipelines
+
+**Key features:**
+
+- Portable and reproducible
+- Scalable from laptop to HPC clusters
+- Container-native (Docker/Singularity/Apptainer)
+- Built-in parallelization and resource management
+- Resume capability for interrupted runs
+
+## Nextflow Language & Programming Model
+
+**Dataflow programming paradigm:**
+
+- Processes are connected by channels (data streams)
+- Tasks execute when inputs are available
+- Automatic parallelization across samples
+- Implicit task dependencies
+
+**Groovy-based DSL (Domain Specific Language):**
+
+- Familiar syntax for programmers
+- Declarative workflow definitions
+- Easy integration with scripts (Python, R, bash)
+
+## Nextflow Programming Example {.smaller}
+
+```groovy
+// Define a process
+process FASTQC {
+    input:
+    path(fastq)
+
+    output:
+    path("*_fastqc.html")
+
+    script:
+    """
+    fastqc ${fastq}
+    """
+}
+
+// Define workflow
+workflow {
+    fastq_ch = Channel.fromPath('data/*.fastq.gz')
+    FASTQC(fastq_ch)
+}
+```
+
+**Key concepts:** Processes are isolated, channels connect them, automatic parallelization
+
+## Nextflow Execution Model
+
+::: {.columns}
+::: {.column width="50%"}
+- Each task runs in isolated dir
+- Symbolic links to inputs
+- Each task is the invocation of a Bash/R/Python script 
+  - monitored for success
+- Processes declare specific outputs to capture
+- Enables resume functionality
+:::
+
+::: {.column width="50%"}
+**Executors:**
+
+- Local (laptop/workstation)
+- SLURM, PBS, LSF
+- AWS Batch, Google Cloud
+- Kubernetes
+
+**Task retry:** 
+
+- Automatic retry with increased resources on failure
+- `-resume` flag reuses cached successful tasks
+
+:::
+:::
+
+## What is nf-core?
+
+Community-driven collection of peer-reviewed bioinformatics pipelines
+
+- Standardized best practices and templates
+- 100+ community supported pipelines
+- Active community support and regular updates
+- [nf-core documentation](https://nf-co.re/docs/usage/getting_started/introduction)
+
+## How nf-core Builds on Nextflow
+
+**nf-core adds structure and standards to Nextflow:**
+
+::: {.incremental}
+- **Standardized pipeline structure** - Consistent layout across all pipelines
+- **Best practices** - Pre-configured error handling, logging, reporting
+- **Modules library** - Reusable process definitions (Many tools have pre-defined modules)
+- **Subworkflows** - Common multi-step procedures
+- **Parameter validation** - JSON schema for input checking
+- **Automatic documentation** - Usage docs, parameter docs
+:::
+
+## nf-core Tools Ecosystem {.smaller}
+
+**Command-line tools for pipeline users:**
+
+- `nf-core list` - Browse available pipelines
+- `nf-core download` - Download for offline use
+- `nf-core launch` - Interactive parameter builder
+
+**Tools for pipeline developers:**
+
+- `nf-core create` - Scaffold new pipeline from template
+- `nf-core modules` - Install/update tool modules
+- `nf-core lint` - Check pipeline follows standards
+- `nf-core test` - Run pipeline test suite
+
+**Web resources:** Pipeline finder, module browser, parameter documentation
+
+## nf-core Modules System
+
+**Modular tool definitions:**
+
+```groovy
+// Each tool wrapped as reusable module
+process FASTQC {
+    container 'quay.io/biocontainers/fastqc:0.12.1'
+
+    input:
+    tuple val(meta), path(reads)
+
+    output:
+    tuple val(meta), path("*.html"), emit: html
+
+    script:
+    """
+    fastqc --threads $task.cpus $reads
+    """
+}
+```
+
+**Benefits:** Tested, versioned, container-included, reusable across pipelines
+
+## The Meta Map Pattern {.smaller}
+
+**nf-core uses a `meta` map to carry sample metadata through pipelines:**
+
+```groovy
+// Meta map structure
+meta = [
+    id: 'sample1',              // Sample identifier (required)
+    single_end: false,          // Paired-end or single-end reads
+    strandedness: 'reverse',    // Library strandedness (auto/forward/reverse/unstranded)
+    // ... other sample-specific information
+]
+
+// Passed as tuples with files
+Channel
+    .fromPath('samplesheet.csv')
+    .splitCsv(header: true)
+    .map { row ->
+        def meta = [id: row.sample, single_end: false]
+        [meta, [file(row.fastq_1), file(row.fastq_2)]]
+    }
+```
+
+**Why important:** Metadata stays attached to files, enables conditional processing, output organization
+
+## Collecting Information During Runs {.smaller}
+
+**nf-core pipelines collect various outputs for reporting and tracking:**
+
+::: {.columns}
+::: {.column width="50%"}
+**MultiQC Reports:**
+```groovy
+// Collect all QC outputs
+ch_multiqc_files = Channel.empty()
+ch_multiqc_files = ch_multiqc_files
+    .mix(FASTQC.out.zip)
+    .mix(STAR_ALIGN.out.log)
+    .collect()
+
+MULTIQC(ch_multiqc_files)
+```
+:::
+
+::: {.column width="50%"}
+**Software Versions:**
+```groovy
+// Track tool versions
+ch_versions = Channel.empty()
+ch_versions = ch_versions
+    .mix(FASTQC.out.versions)
+    .mix(STAR_ALIGN.out.versions)
+
+// Combine into single report
+ch_versions.unique()
+    .collectFile(name: 'versions.yml')
+```
+:::
+:::
+
+**Other accumulated data:** Execution metadata, parameter sets, citations, sample summaries
+
+## nf-core Pipeline Features
+
+Built-in functionality every pipeline includes:
+
+- **MultiQC reports** - Aggregated QC across all samples
+- **Resource optimization** - Dynamic resource allocation
+- **Parameter schemas** - Validated inputs with helpful errors
+- **Pipeline reports** - Execution timeline, resource usage
+- **Automatic citations** - Papers to cite for tools used
+
+## Why Use These Tools?
+
+::: {.columns}
+::: {.column width="50%"}
+**Reproducibility**
+
+- Version-pinned software dependencies
+- Same pipeline runs anywhere
+
+**Efficiency**
+
+- Optimized resource usage
+- Automatic parallelization
+
+**Standardization**
+
+- Consistent structure across pipelines
+- Common parameter names and formats
+- Uniform output organization
+:::
+
+::: {.column width="50%"}
+**Portability**
+
+- Laptop, HPC, cloud
+
+**Time-saving**
+
+- Pre-built, tested pipelines
+- Ready to use
+
+**Community Best Practices**
+
+- Peer-reviewed code
+- Active maintenance and updates
+- Collective expertise and optimization
+- Continuous testing
+:::
+:::
+
+# Section 2: OSC-Specific Setup
+
+## Prerequisites Check
+
+::: {.incremental}
+- Access to OSC OnDemand or SSH
+- SLURM account (e.g., `PCON0100`)
+:::
+
+## Installing Nextflow on OSC
+
+Manually
+```bash
+# Create a bin directory in your home if it doesn't exist
+mkdir -p ~/bin
+cd ~/bin
+
+# Download Nextflow
+curl -s https://get.nextflow.io | bash
+
+# Make it executable (should already be)
+chmod +x nextflow
+
+# Add to PATH in ~/.bashrc
+echo 'export PATH=$HOME/bin:$PATH' >> ~/.bashrc
+source ~/.bashrc
+
+# Test installation
+nextflow -version
+```
+
+or with `setup_nextflow.sh`
+
+## Creating Nextflow Configuration for OSC
+
+Create `osc.config`:
+
+```groovy
+singularity {
+    enabled = true
+    cacheDir = System.getenv('HOME') + '/nextflow_images'
+}
+
+process {
+    executor = 'slurm'
+    clusterOptions = '--account=PCON0100'  // Replace with your allocation
+}
+
+executor {
+    $slurm {
+        queueSize = 50
+        submitRateLimit = '10 sec'
+        onlyJobState = true  // SLURM 24+ optimization
+    }
+}
+```
+
+# Section 3: Understanding nf-core/rnaseq
+
+**Current Version**: [3.22.2](https://nf-co.re/rnaseq/3.22.2)
+
+**Purpose**: Analyze bulk RNA-seq data from organisms with reference genomes
+
+## Pipeline Inputs
+
+**Required Inputs:**
+
+- **Raw sequencing data**: FASTQ files (single-end or paired-end)
+  - Alternative: Pre-aligned BAM files
+- **Sample metadata**: CSV samplesheet
+  - Links sample names to FASTQ file paths
+  - Specifies strandedness and other sample-specific parameters
+- **Reference genome**: FASTA sequence file
+- **Gene annotation**: GTF or GFF file
+  - Defines gene/transcript locations and features
+
+## Pipeline Outputs
+
+**Primary Results:**
+
+- **Expression matrices**: Gene and transcript counts, TPM values
+- **Alignments**: sorted, indexed BAM files
+- **MultiQC report**: Aggregated quality control across all samples
+
+**Quality Control Outputs:**
+
+- **Read quality**: FastQC reports
+- **Alignment metrics**: Mapping rates, insert sizes, junction detection
+- **RNA-seq specific QC**: RSeQC (strandedness, read distribution)
+- **Sample relationships**: PCA plots, correlation heatmaps (DESeq2)
+- **Library complexity**: Preseq saturation curves, dupRadar duplication analysis
+
+**Additional Outputs:**
+
+- **Coverage tracks**: bigWig files for genome browser visualization
+- **Assembled transcripts**: StringTie GTF files (if enabled)
+- **Pipeline reports**: Execution timeline, resource usage, software versions
+
+## Pipeline Workflow Overview {.smaller}
+
+The nf-core/rnaseq pipeline follows a multi-stage workflow:
+
+::: {.incremental}
+1. **Pre-processing** - Quality assessment, trimming, contamination removal
+2. **Alignment & Quantification** - Map reads to reference genome/transcriptome
+3. **Post-alignment Processing** - Deduplication, indexing, transcript assembly
+4. **Quality Control** - Comprehensive QC metrics and visualization
+5. **Reporting** - Aggregated MultiQC report
+:::
+
+**Flexibility:** Multiple aligner/quantifier combinations supported
+
+**Resume capability:** Each step is cached for efficient reruns
+
+## Pre-processing Stage {.smaller}
+
+**FastQC** - Sequencing quality assessment
+
+- Analyzes quality score distribution, GC content, adapter contamination
+- Detects overrepresented sequences and potential issues
+- Generates HTML reports with quality visualizations
+
+**Trim Galore! / fastp** - Adapter and quality trimming
+
+- Automatically detects and removes Illumina adapters
+- Trims low-quality bases from read ends
+- Produces trimmed FASTQ files and trimming statistics
+
+**Optional contaminant removal:**
+
+- **BBSplit** - Bins reads by mapping to multiple reference genomes (e.g., filter mouse from PDX samples)
+- **SortMeRNA** - Removes ribosomal RNA sequences using reference databases
+
+## Alignment Options {.smaller}
+
+**STAR** - Spliced Transcripts Alignment to a Reference
+
+- Splice-aware aligner designed for RNA-seq
+- Outperforms other aligners by >50x in mapping speed
+- Memory-intensive (~30GB for human genome)
+- Produces coordinate-sorted BAM files and junction files
+
+**HISAT2** - Hierarchical Graph FM Index aligner
+
+- Sensitive splice-aware alignment
+- Lower memory requirements than STAR
+- Fast hierarchical indexing approach
+- No integrated quantification (requires separate step)
+
+**Salmon** - Pseudoalignment and quantification
+
+- Ultra-fast transcript quantification using k-mer matching
+- No alignment needed - works directly on transcriptome
+- Produces transcript and gene-level TPM and count matrices
+
+## Quantification Methods {.smaller}
+
+**Salmon** (default with STAR)
+
+- Lightweight, selective alignment to transcriptome
+- Generates transcript and gene abundance estimates
+- TPM (Transcripts Per Million) and raw count matrices
+- Extremely fast and accurate
+
+**RSEM** - RNA-Seq by Expectation-Maximization
+
+- "One of the most accurate quantification tools"
+- Uses STAR-aligned BAM files as input
+- Handles multi-mapping reads probabilistically
+- Produces gene and isoform expression estimates
+
+**featureCounts** - Read counting for genomic features
+
+- Counts reads overlapping genes, exons, or custom features
+- Provides biotype-level counts (protein_coding, lncRNA, rRNA, etc.)
+- Useful for detecting contamination (excessive rRNA)
+- Fast and memory-efficient
+
+## Post-Alignment Processing {.smaller}
+
+**SAMtools** - BAM file manipulation
+
+- Sorts and indexes alignment files
+- Generates alignment statistics (flagstat, idxstats)
+- Essential for downstream analysis compatibility
+
+**Picard MarkDuplicates** - Duplicate flagging
+
+- Identifies PCR and optical duplicates
+- Flags (not removes) duplicates in RNA-seq
+- Important: RNA-seq has biological duplicates from highly expressed genes
+
+**UMI-tools** (optional) - UMI-based deduplication
+
+- Extracts UMI barcodes from read names
+- Removes PCR duplicates using UMI information
+- Addresses PCR bias in UMI-tagged libraries
+
+**StringTie** (optional) - Transcript assembly
+
+- Reconstructs transcriptome using network flow algorithms
+- Identifies novel transcripts and isoforms
+- Generates GTF files with assembled transcripts and FPKM values
+
+## Quality Control Tools {.smaller}
+
+**RSeQC** - Comprehensive RNA-seq QC suite
+
+- `infer_experiment` - Auto-detects library strandedness
+- `read_distribution` - Shows reads across genomic features (CDS, UTRs, introns, intergenic)
+- `junction_annotation` - Compares detected splice junctions to reference
+- `inner_distance` - Calculates insert size distribution
+- `junction_saturation` - Predicts if sequencing depth is sufficient
+- `read_duplication` - Identifies PCR bias patterns
+- `bam_stat` - Comprehensive alignment statistics
+
+**Qualimap** - Platform-independent RNA-seq QC
+
+- Examines coverage relative to gene features
+- Interactive HTML reports with genomic property analysis
+- Note: Known bug may inflate genomic feature counts
+
+## Quality Control Tools (continued) {.smaller}
+
+**dupRadar** - Technical vs biological duplication
+
+- Relates duplication rate to gene expression levels
+- Good samples: high duplicates only for highly expressed genes
+- Technical contamination: duplicates across all expression levels
+- Helps identify library preparation issues
+
+**Preseq** - Library complexity estimation
+
+- Predicts sequencing saturation and library complexity
+- Plateau curve = complete coverage, no benefit from more sequencing
+- Steep curve = additional sequencing will yield new sequences
+- Guides decisions about sequencing depth
+
+**DESeq2** - Sample relationship visualization
+
+- PCA plots showing sample clustering
+- Hierarchical clustering dendrograms
+- Uses variance-stabilized transformation (VST)
+- Helps identify batch effects and outliers
+
+## Common Workflow Combinations {.smaller}
+
+The pipeline supports several aligner/quantifier workflows:
+
+| Workflow | Command Flag | Best For | Speed |
+|----------|-------------|----------|-------|
+| **STAR + Salmon** | `--aligner star_salmon` | General use (default) | Fast |
+| **STAR + RSEM** | `--aligner star_rsem` | Isoform-level analysis | Moderate |
+| **HISAT2** | `--aligner hisat2` | Memory-constrained systems | Fast |
+| **Salmon only** | `--pseudo_aligner salmon` | Ultra-fast quantification | Fastest |
+| **Kallisto** | `--pseudo_aligner kallisto` | Alternative pseudoaligner | Fastest |
+
+**Recommendation**: Use default `star_salmon` for most analyses - good balance of speed and compatibility
+
+**Advanced**: Can skip alignment with `--skip_alignment` to reprocess existing BAMs with different quantifiers
+
+## Final Reporting {.smaller}
+
+**MultiQC** - Aggregated quality report
+
+- Single HTML report summarizing all samples and tools
+- Interactive plots and downloadable data tables
+- Sections include:
+  - Read quality and trimming statistics
+  - Alignment metrics and mapping rates
+  - Gene biotype distribution
+  - Strand-specificity validation
+  - Duplication rates and library complexity
+  - Sample correlation and clustering
+
+**Pipeline execution reports:**
+
+- `execution_report.html` - Resource usage and timing
+- `execution_timeline.html` - Visual timeline of all processes
+- `execution_trace.txt` - Detailed process metrics
+- `pipeline_dag.html` - Visual graph of workflow execution
+
+## Output Directory Structure {.smaller}
+
+```
+results/
+├── multiqc/
+│   └── multiqc_report.html           # Main QC report
+├── star_salmon/                       # Aligner-specific directory
+│   ├── *.Aligned.sortedByCoord.bam   # Aligned BAM files
+│   ├── *.transcriptome.bam           # Transcriptome alignments
+│   ├── salmon/                       # Quantification results
+│   │   └── salmon.merged.gene_counts.tsv
+│   └── log/                          # STAR alignment logs
+├── fastqc/                           # Raw read QC
+├── trimgalore/                       # Trimming reports
+├── samtools_stats/                   # Alignment statistics
+├── rseqc/                            # RNA-seq specific QC
+├── qualimap/                         # Genome feature QC
+├── dupradar/                         # Duplication analysis
+├── preseq/                           # Library complexity
+├── deseq2_qc/                        # PCA and clustering plots
+├── genome/                           # Reference files (if --save_reference)
+└── pipeline_info/                    # Execution metadata
+```
+
+## Required Parameters
+
+Three essential parameters:
+
+```bash
+--input samplesheet.csv        # Sample sheet CSV
+--outdir results               # Output directory
+--genome GRCh38                # Reference genome key
+```
+
+**OR** provide custom references:
+
+```bash
+--fasta genome.fa
+--gtf annotation.gtf
+```
+
+# Section 4: Reference Genomes - iGenomes
+
+## What is iGenomes?
+
+**iGenomes** = Pre-built reference genomes from Illumina
+
+Includes:
+
+- Reference genome sequences (FASTA)
+- Gene annotations (GTF/GFF)
+- Pre-built aligner indices (STAR, Bowtie2, BWA, etc.)
+- Annotation files and resources
+
+## nf-core Integration with iGenomes
+
+::: {.incremental}
+- nf-core uploaded iGenomes to AWS S3 (Open Data)
+- All nf-core pipelines configured to use AWS iGenomes by default
+- **Free to download** - no AWS account required
+- Automatically downloaded when you specify `--genome`
+:::
+
+[nf-core Reference Genomes docs](https://nf-co.re/docs/usage/reference_genomes)
+
+## Available Genomes {.smaller}
+
+| Genome Key | Organism | Source | Build |
+|------------|----------|--------|-------|
+| `GRCh38` | Human | Ensembl | GRCh38 |
+| `GRCh37` | Human | Ensembl | GRCh37 (hg19) |
+| `GRCm39` | Mouse | Ensembl | GRCm39 |
+| `GRCm38` | Mouse | Ensembl | GRCm38 |
+| `TAIR10` | A. thaliana | Ensembl | TAIR10 |
+| `EB2` | E. coli | Ensembl | EB2 |
+| `WBcel235` | C. elegans | Ensembl | WBcel235 |
+| `R64-1-1` | S. cerevisiae | Ensembl | R64-1-1 |
+
+Full list: [AWS-iGenomes](https://ewels.github.io/AWS-iGenomes/)
+
+## Using iGenomes (Default Method)
+
+```bash
+nextflow run nf-core/rnaseq \
+    -r 3.22.2 \
+    --input samplesheet.csv \
+    --outdir results \
+    --genome GRCh38 \
+    -profile singularity \
+    -c osc.config
+```
+
+**What happens automatically:**
+
+1. Checks if genome files exist locally
+2. Downloads from AWS S3 if needed
+3. Downloads only what's needed for chosen aligner
+4. Builds missing indices if needed
+5. Caches files for future runs
+
+## Understanding `--save_reference`
+
+::: {.columns}
+::: {.column width="50%"}
+**Without `--save_reference`**
+
+- Files in `work/genome/`
+- Deleted with `nextflow clean`
+- Reusable while `work/` exists
+:::
+
+::: {.column width="50%"}
+**With `--save_reference`**
+
+- Copied to `results/genome/`
+- Permanent storage
+- Safe after deleting `work/`
+- Reuse in future runs
+:::
+:::
+
+**When to use**: First time with a genome, or when setting up shared references
+
+## Custom References:
+
+**Method 1**: Supply custom FASTA and GTF
+
+```bash
+--genome GRCh38 \
+--fasta /path/to/genome.fa.gz \
+--gtf /path/to/annotation.gtf.gz
+```
+
+**Method 2**: Completely ignore iGenomes (use custom references)
+
+```bash
+# Use the provided script
+./run_rnaseq_custom.sh
+
+# Or manually:
+--igenomes_ignore \
+--fasta /path/to/genome.fa.gz \
+--gtf /path/to/annotation.gtf.gz
+```
+
+**Method 3**: Pre-built indices (fastest)
+
+```bash
+# Use the provided script
+./run_rnaseq_prebuilt.sh
+
+# Or manually:
+--igenomes_ignore \
+--fasta /path/to/genome.fa \
+--gtf /path/to/annotation.gtf \
+--star_index /path/to/star_index/ \
+--salmon_index /path/to/salmon_index/
+```
+
+# Section 5: Hands-On Exercise
+
+## Step 1: Set Up Project Directory
+
+```bash
+# Create project directory
+cd $HOME
+mkdir nextflow_tutorial
+cd nextflow_tutorial
+
+# Create directories
+mkdir -p data results work
+```
+
+## Step 2: Quick Test Run
+
+**Run the test script:**
+
+```bash
+./run_rnaseq_test.sh
+```
+
+**Or manually:**
+
+```bash
+nextflow run nf-core/rnaseq \
+    -r 3.22.2 \
+    -profile test,singularity \
+    -c osc.config \
+    --outdir results
+```
+
+**What this does:**
+
+- Downloads tiny test FASTQ files
+- Uses yeast genome (small and fast)
+- Runs complete pipeline in ~10-15 minutes
+- Verifies setup before running real data
+
+## Aside: Understanding Profiles {.smaller}
+
+**Profiles are re-usable sets of config options provided by the pipeline.  They configure where and how your pipeline runs:**
+
+::: {.columns}
+::: {.column width="50%"}
+**Container Engines:**
+
+- `docker` - Use Docker containers
+- `singularity` - Use Singularity/Apptainer
+- `podman` - Use Podman
+- `conda` - Use Conda environments
+
+**Execution Environments:**
+
+- `test` - Built-in test data
+- `test_full` - Full-scale test
+:::
+
+::: {.column width="50%"}
+**Institutional Configs:**
+
+- Pre-configured for HPC systems
+- ~60+ institutions supported
+- Example: `awsbatch`, `google`, `azure`
+
+**Can combine profiles:**
+
+```bash
+-profile test,singularity
+-profile singularity,conda
+```
+:::
+:::
+
+**On OSC:** I use `singularity` profile + custom `osc.config` for SLURM settings
+
+## Step 3: Download Test Data
+
+```bash
+# Download HCC1395 test dataset from Griffith Lab
+./download_test_data.sh
+```
+
+**What this downloads:**
+
+- HCC1395 breast cancer cell line data
+- 6 samples: 3 normal + 3 tumor replicates
+- Paired-end reads (chr22 subset, small for testing)
+- Total size: ~500MB
+
+**Source:** [Griffith Lab](http://griffithlab.org) RNA-seq Tutorial
+
+- **Institution:** Washington University in St. Louis
+- **Led by:** Drs. Malachi Griffith & Obi Griffith
+- **Known for:** Comprehensive genomics education resources
+
+**Files will be in:** `./data/*.fastq.gz`
+
+## Step 4: Review Sample Sheet
+
+The provided `samplesheet.csv` is already configured for the Griffith Lab test data:
+
+```csv
+sample,fastq_1,fastq_2,strandedness
+HCC1395_normal_rep1,./data/hcc1395_normal_rep1_r1.fastq.gz,./data/hcc1395_normal_rep1_r2.fastq.gz,auto
+HCC1395_normal_rep2,./data/hcc1395_normal_rep2_r1.fastq.gz,./data/hcc1395_normal_rep2_r2.fastq.gz,auto
+HCC1395_normal_rep3,./data/hcc1395_normal_rep3_r1.fastq.gz,./data/hcc1395_normal_rep3_r2.fastq.gz,auto
+HCC1395_tumor_rep1,./data/hcc1395_tumor_rep1_r1.fastq.gz,./data/hcc1395_tumor_rep1_r2.fastq.gz,auto
+HCC1395_tumor_rep2,./data/hcc1395_tumor_rep2_r1.fastq.gz,./data/hcc1395_tumor_rep2_r2.fastq.gz,auto
+HCC1395_tumor_rep3,./data/hcc1395_tumor_rep3_r1.fastq.gz,./data/hcc1395_tumor_rep3_r2.fastq.gz,auto
+```
+
+**For your own data:**
+
+- Replace sample names and file paths with your FASTQ files
+- For single-end data, omit `fastq_2` column
+- Strandedness: `unstranded`, `forward`, `reverse`, `auto`
+
+## Step 5: Run Script
+
+The `run_rnaseq.sh` script is pre-configured with these parameters:
+
+```bash
+#!/usr/bin/env bash
+
+nextflow run nf-core/rnaseq \
+    -r 3.22.2 \
+    -resume \
+    -c osc.config \
+    -profile singularity \
+    -w ./work \
+    --input ./samplesheet.csv \
+    --outdir ./results \
+    --genome GRCh38 \
+    --aligner star_salmon \
+    --save_reference
+```
+
+**Script location:** `./run_rnaseq.sh` (ready to use)
+
+## Important Flags Explained
+
+- `-r 3.22.2` - Pin specific version for reproducibility
+- `-resume` - Resume from last successful step if restarting
+- `-c osc.config` - Use OSC configuration
+- `-profile singularity` - Use Singularity containers
+- `-w ./work` - Nextflow working directory
+- `--genome GRCh38` - Use iGenomes reference (auto-download)
+- `--save_reference` - Save genome files for reuse
+
+## Step 6: Execute Pipeline
+
+```bash
+# Make script executable
+chmod +x run_rnaseq.sh
+
+# Run pipeline
+./run_rnaseq.sh
+```
+
+## Step 7: Monitor Progress
+
+```bash
+# Check SLURM queue (detailed view)
+squeue -u $USER -o "%.18i %.9P %.130j %.8u %.8T %.10M %.9l %.6D %R"
+
+# watch the above command
+./watch_squeue
+
+# Watch Nextflow output
+tail -f .nextflow.log
+
+# Check specific process logs
+ls -lht work/*/*/.command.log | head
+```
+
+# Section 6: Customization and Configuration
+
+## Process-Specific Resource Overrides
+
+Create `custom.config`:
+
+```groovy
+process {
+    // Increase memory for STAR alignment
+    withName: 'STAR_ALIGN' {
+        memory = 64.GB
+        cpus = 12
+        time = 8.h
+    }
+
+    // Adjust Salmon quantification resources
+    withName: 'SALMON_QUANT' {
+        memory = 32.GB
+        cpus = 8
+    }
+
+    // Override by label
+    withLabel: 'process_high' {
+        memory = 100.GB
+        cpus = 16
+    }
+}
+```
+
+## Common Pipeline Parameters {.smaller}
+
+**Genome Selection:**
+
+```bash
+--genome GRCh38        # Human (latest)
+--genome GRCm39        # Mouse (latest)
+--genome GRCh37        # Human (hg19)
+
+# Override iGenomes files with custom versions
+--genome GRCh38 \
+--fasta /path/to/custom.fa \
+--gtf /path/to/custom.gtf
+```
+
+**Alignment and Quantification:**
+
+```bash
+--aligner star_salmon      # STAR + Salmon (default, recommended)
+--aligner star_rsem        # STAR + RSEM (best for isoform analysis)
+--aligner hisat2           # HISAT2 (lower memory requirements)
+
+--pseudo_aligner salmon    # Salmon only (no genome alignment)
+--pseudo_aligner kallisto  # Kallisto pseudoalignment
+```
+
+**Common Optional Flags:**
+
+```bash
+--skip_trimming            # Skip adapter/quality trimming
+--skip_alignment           # Use pre-existing alignments
+--save_trimmed             # Save trimmed FASTQ files
+--save_unaligned           # Save unmapped reads
+--save_align_intermeds     # Save intermediate BAM files
+```
+
+# Section 7: Troubleshooting and Debugging
+
+## Common Issue 1: Process Fails - Resource Limits
+
+**Symptoms:** Job killed by SLURM, "OutOfMemory" errors
+
+**Diagnosis:**
+
+```bash
+# Find failed process work directory
+ls -lht work/*/*/.command.log | head
+
+# Check error
+cd work/xx/xxxxx...
+cat .command.err
+cat .command.log
+```
+
+## Solution: Adjust Resources
+
+```groovy
+// In custom.config
+process {
+    withName: 'PROBLEMATIC_PROCESS' {
+        memory = { 64.GB * task.attempt }
+        time = { 12.h * task.attempt }
+        errorStrategy = 'retry'
+        maxRetries = 3
+    }
+}
+```
+
+## Common Issue 2: Pipeline Hangs/Stalls
+
+**Diagnosis:**
+
+```bash
+# Check if jobs are queued
+squeue -u $USER -o "%.18i %.9P %.130j %.8T %.10M"
+
+# Check Nextflow log
+tail -f .nextflow.log
+
+# Look for waiting processes
+grep "Submitted process" .nextflow.log | tail -20
+```
+
+**Solution:** Check queue limits in `osc.config`
+
+## Common Issue 3: Container Download Failures
+
+**Symptoms:** "Failed to pull container image" during pipeline run
+
+**Solution 1:** Pre-download all containers before running
+
+```bash
+# List and download all required containers
+nextflow inspect nf-core/rnaseq \
+    -r 3.22.2 \
+    -profile singularity \
+    -concretize
+
+# Note: -concretize works in Nextflow 23.10.x
+# May not work in all versions
+```
+
+**Solution 2:** Containers are cached - just retry
+
+```bash
+# Already-downloaded containers are cached in $HOME/nextflow_images
+# Simply rerun the pipeline - successfully downloaded images are reused
+./run_rnaseq.sh
+```
+
+## Debugging Commands
+
+**View process command:**
+
+```bash
+cat work/xx/xxxxx/.command.sh
+```
+
+**Check resource usage:**
+
+```bash
+cat work/xx/xxxxx/.command.trace
+```
+
+**Run process interactively:**
+
+```bash
+sinteractive -A PCON0100 -t 60 -m 16G
+cd work/xx/xxxxx
+bash .command.sh
+```
+
+## Resume Capabilities
+
+**Almost always use `-resume`:**
+
+- Skips successfully completed processes
+- Only reruns failed or changed processes
+- Saves time and resources
+- Safe to use even on first run
+- If ./work is in bad state, I prefer to delete it
+
+```bash
+# After fixing issue, resume from last checkpoint
+nextflow run nf-core/rnaseq -resume -c osc.config ...
+```
+
+# Section 8: Reproducibility Best Practices
+
+## 1. Version Pinning
+
+**Pipeline Version:**
+
+```bash
+nextflow run nf-core/rnaseq -r 3.22.2  # NOT -r latest
+```
+
+**Nextflow Version:**
+
+```bash
+export NXF_VER=24.10.5
+nextflow run nf-core/rnaseq -r 3.22.2 ...
+```
+
+**Reference Genome Version:**
+
+```bash
+--genome GRCh38  # Version locked to iGenomes build
+# OR document custom genome version clearly
+```
+
+## 2. Documentation
+
+Create project README:
+
+```markdown
+# Project: RNA-seq Analysis
+## Date: 2026-01-28
+## Pipeline: nf-core/rnaseq v3.22.2
+## Nextflow: v24.10.5
+## Reference Genome: GRCh38 (iGenomes / Ensembl 113)
+## Command:
+nextflow run nf-core/rnaseq -r 3.22.2 --genome GRCh38 ...
+```
+
+**Save run info:**
+
+- `results/pipeline_info/execution_report.html`
+- `results/pipeline_info/execution_trace.txt`
+- `results/pipeline_info/execution_timeline.html`
+
+## 3. Version Control
+
+```bash
+git init
+git add osc.config custom.config run_rnaseq.sh samplesheet.csv
+git commit -m "Initial RNAseq pipeline setup"
+```
+
+**`.gitignore`:**
+
+```
+work/
+results/
+.nextflow*
+```
+
+# Section 9: Advanced Topics
+
+## Multiple Configuration Layers
+
+```bash
+# Configs are merged in order for layered customization
+nextflow run nf-core/rnaseq \
+    -c osc.config \          # HPC settings
+    -c custom.config         # Resource overrides
+```
+
+## Offline Execution
+
+```bash
+# Download pipeline first
+nextflow pull nf-core/rnaseq -r 3.22.2
+
+# Pre-download containers
+# Remember to set cache 
+singularity pull docker://nfcore/rnaseq:3.22.2
+
+# Run offline
+NXF_OFFLINE=true nextflow run nf-core/rnaseq ...
+```
+
+# Resources and Next Steps
+
+## Documentation
+
+- **Nextflow Training**: [training.nextflow.io](https://training.nextflow.io/2.8.1/)
+- **nf-core Pipelines**: [nf-co.re](https://nf-co.re/)
+- **nf-core/rnaseq**: [nf-co.re/rnaseq](https://nf-co.re/rnaseq)
+- **nf-core Reference Genomes**: [nf-co.re/docs/usage/reference_genomes](https://nf-co.re/docs/usage/reference_genomes)
+- **AWS iGenomes**: [ewels.github.io/AWS-iGenomes](https://ewels.github.io/AWS-iGenomes/)
+
+## Community Support
+
+- **nf-core Slack**: [nf-co.re/join](https://nf-co.re/join)
+- **Nextflow Forums**: [community.nextflow.io](https://community.nextflow.io)
+- **OSC Help**: [oschelp@osc.edu](mailto:oschelp@osc.edu)
+
+## Other nf-core Pipelines
+
+- **nf-core/atacseq**: ATAC-seq peak calling
+- **nf-core/chipseq**: ChIP-seq analysis
+- **nf-core/scrnaseq**: Single-cell RNA-seq
+- **nf-core/sarek**: Variant calling (WGS/WES)
+- **nf-core/methylseq**: Bisulfite sequencing
+
+Browse all: [nf-co.re/pipelines](https://nf-co.re/pipelines)
+
+# Questions?
+
+## Thank You!
+
+Tutorial materials available at:
+[Your Repository URL]
