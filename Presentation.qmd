@@ -23,13 +23,13 @@ format:
 ## Agenda
 
 1. Introduction to Nextflow & nf-core (10 min)
-2. OSC-Specific Setup (5 min)
-3. Understanding nf-core/rnaseq (5 min)
-4. **Hands-On Exercise** (15 min)
+2. Understanding nf-core/rnaseq (5 min)
+3. Reference Genomes - iGenomes (5 min)
+4. **Hands-On Exercise** (20 min)
+   - Includes OSC setup and configuration
 5. Customization (5 min)
 6. Troubleshooting (5 min)
-7. Reproducibility Best Practices (3 min)
-8. Advanced Topics (2 min)
+7. Reproducibility & Advanced Topics (5 min)
 
 # Section 1: Introduction
 
@@ -249,7 +249,7 @@ Built-in functionality every pipeline includes:
 - **Pipeline reports** - Execution timeline, resource usage
 - **Automatic citations** - Papers to cite for tools used
 
-## Why Use These Tools?
+## Why Use These Pipelines?
 
 ::: {.columns}
 ::: {.column width="50%"}
@@ -289,64 +289,7 @@ Built-in functionality every pipeline includes:
 :::
 :::
 
-# Section 2: OSC-Specific Setup
-
-## Prerequisites Check
-
-::: {.incremental}
-- Access to OSC OnDemand or SSH
-- SLURM account (e.g., `PCON0100`)
-:::
-
-## Installing Nextflow on OSC
-
-Manually
-```bash
-# Create a bin directory in your home if it doesn't exist
-mkdir -p ~/bin
-cd ~/bin
-
-# Download Nextflow
-curl -s https://get.nextflow.io | bash
-
-# Make it executable (should already be)
-chmod +x nextflow
-
-# Add to PATH in ~/.bashrc
-echo 'export PATH=$HOME/bin:$PATH' >> ~/.bashrc
-source ~/.bashrc
-
-# Test installation
-nextflow -version
-```
-
-or with `setup_nextflow.sh`
-
-## Creating Nextflow Configuration for OSC
-
-Create `osc.config`:
-
-```groovy
-singularity {
-    enabled = true
-    cacheDir = System.getenv('HOME') + '/nextflow_images'
-}
-
-process {
-    executor = 'slurm'
-    clusterOptions = '--account=PCON0100'  // Replace with your allocation
-}
-
-executor {
-    $slurm {
-        queueSize = 50
-        submitRateLimit = '10 sec'
-        onlyJobState = true  // SLURM 24+ optimization
-    }
-}
-```
-
-# Section 3: Understanding nf-core/rnaseq
+# Section 2: Understanding nf-core/rnaseq
 
 **Current Version**: [3.22.2](https://nf-co.re/rnaseq/3.22.2)
 
@@ -612,7 +555,7 @@ Three essential parameters:
 --gtf annotation.gtf
 ```
 
-# Section 4: Reference Genomes - iGenomes
+# Section 3: Reference Genomes - iGenomes
 
 ## What is iGenomes?
 
@@ -730,21 +673,85 @@ nextflow run nf-core/rnaseq \
 --salmon_index /path/to/salmon_index/
 ```
 
-# Section 5: Hands-On Exercise
+# Section 4: Hands-On Exercise
 
-## Step 1: Set Up Project Directory
+## Prerequisites
+
+::: {.incremental}
+- Access to OSC OnDemand or SSH
+- SLURM account (e.g., `PCON0100`)
+- Working on scratch filesystem recommended
+:::
+
+## Step 1: Clone the Tutorial Repository
+
+Clone the tutorial repository to your scratch space:
 
 ```bash
-# Create project directory
-cd $HOME
-mkdir nextflow_tutorial
-cd nextflow_tutorial
+# Navigate to scratch filesystem
+cd /fs/scratch/PCON0005/$USER  # or your project allocation
 
-# Create directories
-mkdir -p data results work
+# Clone the repository
+git clone https://github.com/GKinnebrew-OSU/2026-01_Nextflow_Introduction_Tutorial.git
+cd 2026-01_Nextflow_Introduction_Tutorial/
 ```
 
-## Step 2: Quick Test Run
+## Step 2: Install Nextflow on OSC
+
+**Option 1:** Use the provided setup script
+
+```bash
+./setup_nextflow.sh
+```
+
+**Option 2:** Install manually
+
+```bash
+# Create a bin directory in your home if it doesn't exist
+mkdir -p ~/bin
+cd ~/bin
+
+# Download Nextflow
+curl -s https://get.nextflow.io | bash
+
+# Make it executable (should already be)
+chmod +x nextflow
+
+# Add to PATH in ~/.bashrc
+echo 'export PATH=$HOME/bin:$PATH' >> ~/.bashrc
+source ~/.bashrc
+
+# Test installation
+nextflow -version
+```
+
+## Step 3: Review OSC Configuration
+
+The repository includes `osc.config` for OSC-specific settings:
+
+```groovy
+singularity {
+    enabled = true
+    cacheDir = System.getenv('HOME') + '/nextflow_images'
+}
+
+process {
+    executor = 'slurm'
+    clusterOptions = '--account=PCON0100'  // Replace with your allocation
+}
+
+executor {
+    $slurm {
+        queueSize = 50
+        submitRateLimit = '10 sec'
+        onlyJobState = true  // SLURM 24+ optimization
+    }
+}
+```
+
+**Important:** Edit `clusterOptions` to use your SLURM account
+
+## Step 4: Quick Test Run
 
 **Run the test script:**
 
@@ -806,7 +813,7 @@ nextflow run nf-core/rnaseq \
 
 **On OSC:** I use `singularity` profile + custom `osc.config` for SLURM settings
 
-## Step 3: Download Test Data
+## Step 5: Download Test Data
 
 ```bash
 # Download HCC1395 test dataset from Griffith Lab
@@ -828,7 +835,7 @@ nextflow run nf-core/rnaseq \
 
 **Files will be in:** `./data/*.fastq.gz`
 
-## Step 4: Review Sample Sheet
+## Step 6: Review Sample Sheet
 
 The provided `samplesheet.csv` is already configured for the Griffith Lab test data:
 
@@ -848,7 +855,7 @@ HCC1395_tumor_rep3,./data/hcc1395_tumor_rep3_r1.fastq.gz,./data/hcc1395_tumor_re
 - For single-end data, omit `fastq_2` column
 - Strandedness: `unstranded`, `forward`, `reverse`, `auto`
 
-## Step 5: Run Script
+## Step 7: Run Script
 
 The `run_rnaseq.sh` script is pre-configured with these parameters:
 
@@ -868,8 +875,6 @@ nextflow run nf-core/rnaseq \
     --save_reference
 ```
 
-**Script location:** `./run_rnaseq.sh` (ready to use)
-
 ## Important Flags Explained
 
 - `-r 3.22.2` - Pin specific version for reproducibility
@@ -880,17 +885,8 @@ nextflow run nf-core/rnaseq \
 - `--genome GRCh38` - Use iGenomes reference (auto-download)
 - `--save_reference` - Save genome files for reuse
 
-## Step 6: Execute Pipeline
 
-```bash
-# Make script executable
-chmod +x run_rnaseq.sh
-
-# Run pipeline
-./run_rnaseq.sh
-```
-
-## Step 7: Monitor Progress
+## Step 8: Monitor Progress
 
 ```bash
 # Check SLURM queue (detailed view)
@@ -906,7 +902,7 @@ tail -f .nextflow.log
 ls -lht work/*/*/.command.log | head
 ```
 
-# Section 6: Customization and Configuration
+# Section 5: Customization and Configuration
 
 ## Process-Specific Resource Overrides
 
@@ -971,7 +967,7 @@ process {
 --save_align_intermeds     # Save intermediate BAM files
 ```
 
-# Section 7: Troubleshooting and Debugging
+# Section 6: Troubleshooting and Debugging
 
 ## Common Issue 1: Process Fails - Resource Limits
 
@@ -1003,24 +999,7 @@ process {
 }
 ```
 
-## Common Issue 2: Pipeline Hangs/Stalls
-
-**Diagnosis:**
-
-```bash
-# Check if jobs are queued
-squeue -u $USER -o "%.18i %.9P %.130j %.8T %.10M"
-
-# Check Nextflow log
-tail -f .nextflow.log
-
-# Look for waiting processes
-grep "Submitted process" .nextflow.log | tail -20
-```
-
-**Solution:** Check queue limits in `osc.config`
-
-## Common Issue 3: Container Download Failures
+## Common Issue 2: Container Download Failures
 
 **Symptoms:** "Failed to pull container image" during pipeline run
 
@@ -1033,8 +1012,7 @@ nextflow inspect nf-core/rnaseq \
     -profile singularity \
     -concretize
 
-# Note: -concretize works in Nextflow 23.10.x
-# May not work in all versions
+# May not work in old nextflow versions
 ```
 
 **Solution 2:** Containers are cached - just retry
@@ -1082,9 +1060,9 @@ bash .command.sh
 nextflow run nf-core/rnaseq -resume -c osc.config ...
 ```
 
-# Section 8: Reproducibility Best Practices
+# Section 7: Reproducibility & Advanced Topics
 
-## 1. Version Pinning
+## Version Pinning
 
 **Pipeline Version:**
 
@@ -1106,27 +1084,13 @@ nextflow run nf-core/rnaseq -r 3.22.2 ...
 # OR document custom genome version clearly
 ```
 
-## 2. Documentation
-
-Create project README:
-
-```markdown
-# Project: RNA-seq Analysis
-## Date: 2026-01-28
-## Pipeline: nf-core/rnaseq v3.22.2
-## Nextflow: v24.10.5
-## Reference Genome: GRCh38 (iGenomes / Ensembl 113)
-## Command:
-nextflow run nf-core/rnaseq -r 3.22.2 --genome GRCh38 ...
-```
-
 **Save run info:**
 
 - `results/pipeline_info/execution_report.html`
 - `results/pipeline_info/execution_trace.txt`
 - `results/pipeline_info/execution_timeline.html`
 
-## 3. Version Control
+## Version Control
 
 ```bash
 git init
@@ -1141,8 +1105,6 @@ work/
 results/
 .nextflow*
 ```
-
-# Section 9: Advanced Topics
 
 ## Multiple Configuration Layers
 
@@ -1160,8 +1122,7 @@ nextflow run nf-core/rnaseq \
 nextflow pull nf-core/rnaseq -r 3.22.2
 
 # Pre-download containers
-# Remember to set cache 
-singularity pull docker://nfcore/rnaseq:3.22.2
+nextflow inspect -concretize ...
 
 # Run offline
 NXF_OFFLINE=true nextflow run nf-core/rnaseq ...
@@ -1181,7 +1142,6 @@ NXF_OFFLINE=true nextflow run nf-core/rnaseq ...
 
 - **nf-core Slack**: [nf-co.re/join](https://nf-co.re/join)
 - **Nextflow Forums**: [community.nextflow.io](https://community.nextflow.io)
-- **OSC Help**: [oschelp@osc.edu](mailto:oschelp@osc.edu)
 
 ## Other nf-core Pipelines
 
@@ -1197,5 +1157,3 @@ Browse all: [nf-co.re/pipelines](https://nf-co.re/pipelines)
 
 ## Thank You!
 
-Tutorial materials available at:
-[Your Repository URL]
